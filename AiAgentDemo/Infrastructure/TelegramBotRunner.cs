@@ -1,22 +1,23 @@
-﻿using Telegram.Bot;
+using Telegram.Bot;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 
 namespace AiAgentDemo;
-internal class TelegramBot(Func<long, string, Task<string>> getAnswer)
+
+internal class TelegramBotRunner(Func<long, string, CancellationToken, Task<string>> getAnswer)
 {
     public const string EnvironmentVariable = "TELEGRAM_BOT_DEM_TOKEN";
-    public string Name { get; private set; }
+    public string? BotName { get; private set; }
 
-    public async Task Initialize()
+    public async Task RunAsync(CancellationToken cancellationToken = default)
     {
         var botToken = Environment.GetEnvironmentVariable(EnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(botToken))
+            throw new InvalidOperationException($"Please set the {EnvironmentVariable} environment variable with the Telegram bot token.");
 
         var bot = new TelegramBotClient(botToken);
-        Name = (await bot.GetMe()).Username!;
-
-        using var cts = new CancellationTokenSource();
+        BotName = (await bot.GetMe(cancellationToken)).Username;
 
         bot.StartReceiving(
             HandleUpdateAsync,
@@ -25,8 +26,10 @@ internal class TelegramBot(Func<long, string, Task<string>> getAnswer)
             {
                 AllowedUpdates = Array.Empty<UpdateType>()
             },
-            cancellationToken: cts.Token
+            cancellationToken: cancellationToken
         );
+
+        await Task.Delay(Timeout.Infinite, cancellationToken);
     }
 
     private async Task HandleUpdateAsync(ITelegramBotClient bot, Update update, CancellationToken ct)
@@ -40,7 +43,7 @@ internal class TelegramBot(Func<long, string, Task<string>> getAnswer)
         if (message.From is null)
             return;
 
-        var answer = await getAnswer.Invoke(message.From.Id, message.Text);
+        var answer = await getAnswer.Invoke(message.From.Id, message.Text, ct);
 
         await bot.SendMessage(
             chatId: message.Chat.Id,
@@ -55,4 +58,3 @@ internal class TelegramBot(Func<long, string, Task<string>> getAnswer)
         return Task.CompletedTask;
     }
 }
-
