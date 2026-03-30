@@ -6,24 +6,32 @@ internal class ChatOrchestrator(AgentIdentifiers agentIdentifiers, RavenAiClient
 {
     public async Task<string> HandleTelegramPromptAsync(long telegramUserId, string userPrompt, CancellationToken token = default)
     {
+        var userId = await userProfileResolver.GetOrCreateUserIdAsync(telegramUserId, token);
+        return await HandlePromptAsync(userId, userPrompt, token);
+    }
+
+    public Task<string> HandleHttpPromptAsync(string userId, string userPrompt, CancellationToken token = default)
+        => HandlePromptAsync(userId, userPrompt, token);
+
+    private async Task<string> HandlePromptAsync(string userId, string userPrompt, CancellationToken token)
+    {
         var preClassification = await aiClient.ClassifyAsync(
-            agentIdentifiers.PreGuardId, $"Classifications/pre/{telegramUserId}/{Guid.NewGuid():N}",
+            agentIdentifiers.PreGuardId, $"Classifications/pre/{userId}/",
             userPrompt, token);
 
-        PrintToConsole($"User {telegramUserId}", userPrompt, ConsoleColor.DarkGreen);
+        PrintToConsole($"User {userId}", userPrompt, ConsoleColor.DarkGreen);
         if (TryGetBlockingMessage(preClassification, userPrompt, out var blockedUserMessage))
         {
             PrintBlocked("User", userPrompt, blockedUserMessage, preClassification);
             return blockedUserMessage;
         }
 
-        var userId = await userProfileResolver.GetOrCreateUserIdAsync(telegramUserId, token);
         var answer = await aiClient.GetCoachResponseAsync(
-            agentIdentifiers.CoachAgentId, $"Chats/{telegramUserId}",
+            agentIdentifiers.CoachAgentId, $"Chats/{userId}",
             userId, userPrompt, token);
 
         var postClassification = await aiClient.ClassifyAsync(
-            agentIdentifiers.PostGuardId, $"Classifications/post/{telegramUserId}/{Guid.NewGuid():N}",
+            agentIdentifiers.PostGuardId, $"Classifications/post/{userId}/",
             answer, token);
 
         if (TryGetBlockingMessage(postClassification, answer, out var blockedAgentMessage))
@@ -142,16 +150,11 @@ internal class ChatOrchestrator(AgentIdentifiers agentIdentifiers, RavenAiClient
         Console.ForegroundColor = ConsoleColor.White;
     }
 
-    private string Normalize(string text) => DetectLanguage(text) switch
-    {
-        ConversationLanguage.Hebrew or ConversationLanguage.Arabic => Reverse(text),
-        _ => text
-    };
+    private string Normalize(string text)
+        => DetectLanguage(text) switch
+        {
+            ConversationLanguage.Hebrew or ConversationLanguage.Arabic => new string(text.Reverse().ToArray()),
+            _ => text
+        };
 
-    private static string Reverse(string text)
-    {
-        var chars = text.ToCharArray();
-        Array.Reverse(chars);
-        return new string(chars);
-    }
 }

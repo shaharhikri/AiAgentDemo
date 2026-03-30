@@ -51,3 +51,7 @@ public class CoachResponse
 }
 
 internal record AgentIdentifiers(string PreGuardId, string PostGuardId, string CoachAgentId);
+
+public record ChatRequest(string UserId, string Prompt);
+
+public record ChatResponse(string Response);
